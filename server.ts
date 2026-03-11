@@ -7,11 +7,13 @@ import dotenv from 'dotenv';
 import { v4 as uuidv4 } from 'uuid';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import fs from 'node:fs';
+import path from 'node:path';
 
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
 
 app.use(cors());
 app.use(express.json());
@@ -297,14 +299,28 @@ app.post('/api/orders', upload.single('systemZip'), async (req, res) => {
 async function startServer() {
   await initDb(); // Initialize database schema on startup
 
-  if (process.env.NODE_ENV !== 'production') {
+  const useViteDevServer =
+    process.env.NODE_ENV === 'development' || process.env.USE_VITE_DEV_SERVER === 'true';
+
+  if (useViteDevServer) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static('dist'));
+    const distDir = path.resolve(process.cwd(), 'dist');
+    const distIndex = path.join(distDir, 'index.html');
+
+    if (!fs.existsSync(distIndex)) {
+      console.error('Missing dist/index.html. Run "npm run build" before starting production server.');
+    }
+
+    app.use(express.static(distDir));
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api/')) return next();
+      res.sendFile(distIndex);
+    });
   }
 
   app.listen(PORT, '0.0.0.0', () => {
