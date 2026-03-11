@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { 
   Server, 
@@ -25,35 +25,82 @@ const Hero = () => {
   const [domainStatus, setDomainStatus] = useState<'idle' | 'loading' | 'available' | 'taken' | 'unknown'>('idle');
   const [domainResult, setDomainResult] = useState('');
   const [domainError, setDomainError] = useState('');
+  const latestRequestRef = useRef(0);
 
-  const checkDomain = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setDomainError('');
-    setDomainResult('');
+  const normalizeDomain = (value: string) =>
+    value.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
 
-    const input = domainQuery.trim();
+  const isDomainCandidate = (value: string) => /^(?=.{4,253}$)[a-z0-9.-]+\.[a-z]{2,63}$/i.test(value);
+
+  const runDomainCheck = async (rawValue: string, requestId?: number) => {
+    const input = normalizeDomain(rawValue);
     if (!input) {
-      setDomainStatus('unknown');
-      setDomainError('Enter a domain name to check.');
+      setDomainStatus('idle');
+      setDomainResult('');
+      setDomainError('');
+      return;
+    }
+
+    if (!isDomainCandidate(input)) {
+      setDomainStatus('idle');
+      setDomainResult(input);
+      setDomainError('');
       return;
     }
 
     setDomainStatus('loading');
+    setDomainError('');
     try {
       const response = await fetch(`/api/domain/check?domain=${encodeURIComponent(input)}`);
       const data = await response.json().catch(() => ({}));
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Domain check failed');
-      }
+      if (requestId && latestRequestRef.current !== requestId) return;
 
-      setDomainStatus(data.status || 'unknown');
+      setDomainStatus((data.status as 'available' | 'taken' | 'unknown') || 'unknown');
       setDomainResult(data.domain || input);
-    } catch (error: any) {
+      setDomainError('');
+
+      if (!response.ok && !data.status) {
+        setDomainStatus('unknown');
+        setDomainError(data.error || 'Unable to check this domain right now.');
+      }
+    } catch {
+      if (requestId && latestRequestRef.current !== requestId) return;
       setDomainStatus('unknown');
-      setDomainError(error.message || 'Unable to check this domain right now.');
+      setDomainResult(input);
+      setDomainError('Temporary lookup issue. Try again.');
     }
   };
+
+  const checkDomain = async (event: React.FormEvent) => {
+    event.preventDefault();
+    latestRequestRef.current += 1;
+    await runDomainCheck(domainQuery, latestRequestRef.current);
+  };
+
+  useEffect(() => {
+    const normalized = normalizeDomain(domainQuery);
+    if (!normalized) {
+      setDomainStatus('idle');
+      setDomainResult('');
+      setDomainError('');
+      return;
+    }
+
+    if (!normalized.includes('.')) {
+      setDomainStatus('idle');
+      setDomainResult(normalized);
+      setDomainError('');
+      return;
+    }
+
+    const requestId = ++latestRequestRef.current;
+    const timer = setTimeout(() => {
+      void runDomainCheck(normalized, requestId);
+    }, 450);
+
+    return () => clearTimeout(timer);
+  }, [domainQuery]);
 
   const statusStyles: Record<'available' | 'taken' | 'unknown', string> = {
     available: 'bg-emerald-500/15 text-emerald-300 border-emerald-400/40',
@@ -112,9 +159,13 @@ const Hero = () => {
           </button>
         </motion.form>
 
-        {(domainResult || domainError) && (
+        {(domainResult || domainError || domainStatus === 'loading') && (
           <div className="max-w-3xl mx-auto mt-4">
-            {domainError ? (
+            {domainStatus === 'loading' ? (
+              <div className={`rounded-xl border px-4 py-3 text-left text-sm ${statusStyles.unknown}`}>
+                Checking domain availability...
+              </div>
+            ) : domainError ? (
               <div className={`rounded-xl border px-4 py-3 text-left text-sm ${statusStyles.unknown}`}>
                 {domainError}
               </div>

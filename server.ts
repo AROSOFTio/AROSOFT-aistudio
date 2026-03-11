@@ -44,6 +44,28 @@ const editorUpload = multer({
   limits: { fileSize: 15 * 1024 * 1024 },
 });
 
+type DomainStatus = 'available' | 'taken' | 'unknown';
+
+type DomainCheckResult = {
+  status: DomainStatus;
+  source: string;
+};
+
+type PesapalOrderResponse = {
+  redirect_url: string;
+  order_tracking_id: string;
+  merchant_reference?: string;
+};
+
+const pesapalBaseUrl =
+  (process.env.PESAPAL_ENV || 'sandbox').toLowerCase() === 'live'
+    ? 'https://pay.pesapal.com/v3/api'
+    : 'https://cybqa.pesapal.com/pesapalv3/api';
+
+const domainCheckCache = new Map<string, { expiresAt: number; result: DomainCheckResult }>();
+let pesapalTokenCache: { token: string; expiresAt: number } | null = null;
+let pesapalIpnIdCache: string | null = (process.env.PESAPAL_IPN_ID || '').trim() || null;
+
 // MySQL Connection Pool
 let pool: mysql.Pool | null = null;
 
@@ -101,7 +123,7 @@ function isValidDomain(domain: string): boolean {
   return /^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(domain);
 }
 
-async function checkDomainAvailability(domain: string): Promise<{ status: 'available' | 'taken' | 'unknown'; source: string }> {
+async function checkDomainAvailability(domain: string): Promise<DomainCheckResult> {
   // Primary check via RDAP: registered domains should return 200.
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 6000);
@@ -133,6 +155,173 @@ async function checkDomainAvailability(domain: string): Promise<{ status: 'avail
   }
 }
 
+function mapPesapalPaymentStatus(rawStatus: string): string {
+  const value = String(rawStatus || '').toUpperCase();
+  if (value.includes('COMPLETED') || value.includes('PAID')) return 'PAID';
+  if (value.includes('FAILED') || value.includes('INVALID') || value.includes('CANCELLED') || value.includes('REVERSED')) return 'FAILED';
+  return 'PENDING';
+}
+
+function splitName(fullName: string): { firstName: string; lastName: string } {
+  const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { firstName: 'Customer', lastName: 'Order' };
+  if (parts.length === 1) return { firstName: parts[0], lastName: 'Customer' };
+  return { firstName: parts[0], lastName: parts.slice(1).join(' ') };
+}
+
+async function requestPesapalToken(): Promise<string> {
+  if (pesapalTokenCache && Date.now() < pesapalTokenCache.expiresAt) {
+    return pesapalTokenCache.token;
+  }
+
+  const consumerKey = String(process.env.PESAPAL_CONSUMER_KEY || '').trim();
+  const consumerSecret = String(process.env.PESAPAL_CONSUMER_SECRET || '').trim();
+  if (!consumerKey || !consumerSecret) {
+    throw new Error('Pesapal credentials are missing. Set PESAPAL_CONSUMER_KEY and PESAPAL_CONSUMER_SECRET.');
+  }
+
+  const response = await fetch(`${pesapalBaseUrl}/Auth/RequestToken`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      consumer_key: consumerKey,
+      consumer_secret: consumerSecret,
+    }),
+  });
+
+  const payload: any = await response.json().catch(() => ({}));
+  if (!response.ok || !payload?.token) {
+    const details = payload?.error?.message || payload?.message || JSON.stringify(payload);
+    throw new Error(`Pesapal auth failed (${response.status}): ${details}`);
+  }
+
+  const expiryDate = payload.expiryDate ? Date.parse(payload.expiryDate) : NaN;
+  const expiresAt = Number.isFinite(expiryDate) ? expiryDate - 30_000 : Date.now() + 55 * 60 * 1000;
+
+  pesapalTokenCache = {
+    token: String(payload.token),
+    expiresAt,
+  };
+
+  return pesapalTokenCache.token;
+}
+
+async function getPesapalIpnId(token: string, appUrl: string): Promise<string> {
+  const envIpnId = String(process.env.PESAPAL_IPN_ID || '').trim();
+  if (envIpnId) return envIpnId;
+  if (pesapalIpnIdCache) return pesapalIpnIdCache;
+
+  const ipnUrl = String(process.env.PESAPAL_IPN_URL || `${appUrl}/api/pesapal/ipn`).trim();
+  if (!ipnUrl) {
+    throw new Error('Pesapal IPN URL is missing. Set APP_URL or PESAPAL_IPN_URL.');
+  }
+
+  const response = await fetch(`${pesapalBaseUrl}/URLSetup/RegisterIPN`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      url: ipnUrl,
+      ipn_notification_type: 'POST',
+    }),
+  });
+
+  const payload: any = await response.json().catch(() => ({}));
+  if (!response.ok || !payload?.ipn_id) {
+    const details = payload?.error?.message || payload?.message || JSON.stringify(payload);
+    throw new Error(`Pesapal IPN registration failed (${response.status}): ${details}`);
+  }
+
+  pesapalIpnIdCache = String(payload.ipn_id);
+  return pesapalIpnIdCache;
+}
+
+async function submitPesapalOrder(params: {
+  orderId: string;
+  amount: number;
+  fullName: string;
+  email: string;
+  phone: string;
+  packageType: string;
+  institution?: string;
+  appUrl: string;
+}): Promise<PesapalOrderResponse> {
+  const token = await requestPesapalToken();
+  const notificationId = await getPesapalIpnId(token, params.appUrl);
+  const { firstName, lastName } = splitName(params.fullName);
+
+  const currency = String(process.env.PESAPAL_CURRENCY || 'UGX').trim().toUpperCase();
+  const callbackUrl = String(process.env.PESAPAL_CALLBACK_URL || `${params.appUrl}/api/pesapal/callback`).trim();
+
+  const response = await fetch(`${pesapalBaseUrl}/Transactions/SubmitOrderRequest`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      id: params.orderId,
+      currency,
+      amount: Number(params.amount.toFixed(2)),
+      description: `Student package: ${params.packageType}`,
+      callback_url: callbackUrl,
+      notification_id: notificationId,
+      billing_address: {
+        email_address: params.email,
+        phone_number: params.phone,
+        country_code: String(process.env.PESAPAL_COUNTRY_CODE || 'UG').trim().toUpperCase(),
+        first_name: firstName,
+        last_name: lastName,
+        line_1: params.institution || 'Arosoft Student Order',
+        city: String(process.env.PESAPAL_CITY || 'Kampala'),
+        state: String(process.env.PESAPAL_STATE || 'Central'),
+        postal_code: String(process.env.PESAPAL_POSTAL_CODE || '00000'),
+        zip_code: String(process.env.PESAPAL_ZIP_CODE || '00000'),
+      },
+    }),
+  });
+
+  const payload: any = await response.json().catch(() => ({}));
+  if (!response.ok || !payload?.redirect_url || !payload?.order_tracking_id) {
+    const details = payload?.error?.message || payload?.message || JSON.stringify(payload);
+    throw new Error(`Pesapal order failed (${response.status}): ${details}`);
+  }
+
+  return {
+    redirect_url: String(payload.redirect_url),
+    order_tracking_id: String(payload.order_tracking_id),
+    merchant_reference: String(payload.merchant_reference || params.orderId),
+  };
+}
+
+async function fetchPesapalTransactionStatus(orderTrackingId: string): Promise<any> {
+  const token = await requestPesapalToken();
+  const response = await fetch(
+    `${pesapalBaseUrl}/Transactions/GetTransactionStatus?orderTrackingId=${encodeURIComponent(orderTrackingId)}`,
+    {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+
+  const payload: any = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const details = payload?.error?.message || payload?.message || JSON.stringify(payload);
+    throw new Error(`Pesapal status check failed (${response.status}): ${details}`);
+  }
+  return payload;
+}
+
 // Initialize Database Schema
 async function initDb() {
   const db = getDbPool();
@@ -156,6 +345,9 @@ async function initDb() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    await db.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS pesapal_tracking_id VARCHAR(255) NULL');
+    await db.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_method VARCHAR(100) NULL');
 
     // Users table
     await db.query(`
@@ -244,8 +436,8 @@ app.get('/api/health', (req, res) => {
 });
 
 app.get('/api/domain/check', async (req, res) => {
+  const requested = normalizeDomainInput(String(req.query.domain || ''));
   try {
-    const requested = normalizeDomainInput(String(req.query.domain || ''));
     if (!requested) {
       return res.status(400).json({ error: 'Domain is required' });
     }
@@ -253,11 +445,20 @@ app.get('/api/domain/check', async (req, res) => {
       return res.status(400).json({ error: 'Invalid domain format' });
     }
 
+    const cached = domainCheckCache.get(requested);
+    if (cached && cached.expiresAt > Date.now()) {
+      return res.json({ domain: requested, ...cached.result, cached: true });
+    }
+
     const result = await checkDomainAvailability(requested);
+    domainCheckCache.set(requested, {
+      result,
+      expiresAt: Date.now() + 60_000,
+    });
     res.json({ domain: requested, ...result });
   } catch (error) {
     console.error('Domain check error:', error);
-    res.status(500).json({ error: 'Failed to check domain availability' });
+    res.json({ domain: requested, status: 'unknown', source: 'fallback' });
   }
 });
 
@@ -535,7 +736,7 @@ app.post('/api/admin/uploads/file', authenticateToken, requireAdmin, editorUploa
   }
 });
 
-// Pesapal Mock Implementation
+// Pesapal order creation
 app.post('/api/orders', orderUpload.single('systemZip'), async (req, res) => {
   try {
     const { fullName, email, phone, institution, systemName, systemRepo, packageType, extraNotes } = req.body;
@@ -547,6 +748,15 @@ app.post('/api/orders', orderUpload.single('systemZip'), async (req, res) => {
 
     const orderId = uuidv4();
     const amount = packageType === 'hosting_only' ? 50000 : 86000;
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ error: 'Invalid package amount' });
+    }
+
+    const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
+    const forwardedHost = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+    const protocol = forwardedProto || req.protocol || 'https';
+    const inferredAppUrl = forwardedHost ? `${protocol}://${forwardedHost}` : '';
+    const appUrl = String(process.env.APP_URL || inferredAppUrl || `http://localhost:${PORT}`).replace(/\/+$/, '');
 
     // Save to database if available
     const db = getDbPool();
@@ -557,18 +767,105 @@ app.post('/api/orders', orderUpload.single('systemZip'), async (req, res) => {
       );
     }
 
-    // Generate a mock Pesapal redirect URL
-    const pesapalRedirectUrl = `https://pay.pesapal.com/iframe/PesapalIframe3/Index?OrderTrackingId=${orderId}`;
+    // Create real Pesapal checkout order.
+    const pesapalOrder = await submitPesapalOrder({
+      orderId,
+      amount,
+      fullName,
+      email,
+      phone,
+      packageType,
+      institution,
+      appUrl,
+    });
+
+    if (db) {
+      await db.query(
+        'UPDATE orders SET pesapal_tracking_id = ?, status = ? WHERE id = ?',
+        [pesapalOrder.order_tracking_id, 'PENDING', orderId]
+      );
+    }
 
     res.json({ 
       success: true, 
       orderId, 
-      redirectUrl: pesapalRedirectUrl,
+      amount,
+      redirectUrl: pesapalOrder.redirect_url,
+      trackingId: pesapalOrder.order_tracking_id,
       message: 'Order created successfully. Redirecting to Pesapal...'
     });
   } catch (error) {
     console.error('Order creation error:', error);
-    res.status(500).json({ error: 'Failed to process order' });
+    res.status(500).json({ error: (error as Error)?.message || 'Failed to process order' });
+  }
+});
+
+app.get('/api/pesapal/callback', async (req, res) => {
+  try {
+    const trackingId = String(req.query.OrderTrackingId || req.query.orderTrackingId || '').trim();
+    const merchantReference = String(req.query.OrderMerchantReference || req.query.orderMerchantReference || '').trim();
+
+    if (trackingId) {
+      const db = getDbPool();
+      if (db) {
+        try {
+          const statusPayload = await fetchPesapalTransactionStatus(trackingId);
+          const paymentStatus = mapPesapalPaymentStatus(
+            statusPayload?.payment_status_description ||
+              statusPayload?.status ||
+              statusPayload?.payment_status ||
+              ''
+          );
+          await db.query(
+            'UPDATE orders SET status = ?, payment_method = ? WHERE id = ? OR pesapal_tracking_id = ?',
+            [
+              paymentStatus,
+              String(statusPayload?.payment_method || statusPayload?.payment_account || ''),
+              merchantReference || '',
+              trackingId,
+            ]
+          );
+        } catch (error) {
+          console.error('Pesapal callback status sync failed:', error);
+        }
+      }
+    }
+
+    res.redirect('/student-offer?payment=processed');
+  } catch (error) {
+    console.error('Pesapal callback error:', error);
+    res.redirect('/student-offer?payment=error');
+  }
+});
+
+app.post('/api/pesapal/ipn', async (req, res) => {
+  try {
+    const trackingId = String(req.body?.OrderTrackingId || req.body?.order_tracking_id || '').trim();
+    const merchantReference = String(
+      req.body?.OrderMerchantReference || req.body?.order_merchant_reference || req.body?.merchant_reference || ''
+    ).trim();
+
+    if (!trackingId) {
+      return res.status(200).json({ acknowledged: true });
+    }
+
+    const statusPayload = await fetchPesapalTransactionStatus(trackingId);
+    const paymentStatus = mapPesapalPaymentStatus(
+      statusPayload?.payment_status_description || statusPayload?.status || statusPayload?.payment_status || ''
+    );
+
+    const db = getDbPool();
+    if (db) {
+      await db.query(
+        'UPDATE orders SET status = ?, payment_method = ? WHERE id = ? OR pesapal_tracking_id = ?',
+        [paymentStatus, String(statusPayload?.payment_method || statusPayload?.payment_account || ''), merchantReference || '', trackingId]
+      );
+    }
+
+    res.status(200).json({ acknowledged: true });
+  } catch (error) {
+    console.error('Pesapal IPN error:', error);
+    res.status(200).json({ acknowledged: true });
   }
 });
 
