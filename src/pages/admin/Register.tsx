@@ -6,7 +6,6 @@ export function AdminRegister() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [accessCode, setAccessCode] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -29,7 +28,7 @@ export function AdminRegister() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email, password, accessCode }),
+        body: JSON.stringify({ email, password }),
       });
 
       const data = await response.json().catch(() => ({}));
@@ -125,24 +124,6 @@ export function AdminRegister() {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   className="block w-full pl-10 border-slate-300 rounded-md py-2 border"
                   placeholder="Repeat password"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label htmlFor="accessCode" className="block text-sm font-medium text-slate-700">Access Control Code</label>
-              <div className="mt-1 relative rounded-md shadow-sm">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <KeyRound className="h-5 w-5 text-slate-400" />
-                </div>
-                <input
-                  id="accessCode"
-                  type="password"
-                  required
-                  value={accessCode}
-                  onChange={(e) => setAccessCode(e.target.value)}
-                  className="block w-full pl-10 border-slate-300 rounded-md py-2 border"
-                  placeholder="Provided by owner"
                 />
               </div>
             </div>

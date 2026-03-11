@@ -168,17 +168,30 @@ async function initDb() {
       )
     `);
 
-    // Create default admin if no users exist
-    const [users]: any = await db.query('SELECT COUNT(*) as count FROM users');
-    if (users[0].count === 0) {
-      const defaultAdminEmail = process.env.DEFAULT_ADMIN_EMAIL || 'admin@arosoft.io';
-      const defaultAdminPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'admin123';
+    // Ensure a default admin account exists.
+    const defaultAdminEmail = String(process.env.DEFAULT_ADMIN_EMAIL || 'admin@arosoft.io').trim().toLowerCase();
+    const defaultAdminPassword = String(process.env.DEFAULT_ADMIN_PASSWORD || 'admin123');
+    const resetDefaultPassword = process.env.RESET_DEFAULT_ADMIN_PASSWORD === 'true';
+
+    const [existingDefaultAdmins]: any = await db.query(
+      'SELECT id FROM users WHERE email = ? LIMIT 1',
+      [defaultAdminEmail]
+    );
+
+    if (existingDefaultAdmins.length === 0) {
       const hashedPassword = await bcrypt.hash(defaultAdminPassword, 10);
       await db.query(
         'INSERT INTO users (id, email, password, role) VALUES (?, ?, ?, ?)',
         [uuidv4(), defaultAdminEmail, hashedPassword, 'admin']
       );
-      console.log(`Default admin created: ${defaultAdminEmail} / ${defaultAdminPassword}`);
+      console.log(`Default admin created: ${defaultAdminEmail}`);
+    } else if (resetDefaultPassword) {
+      const hashedPassword = await bcrypt.hash(defaultAdminPassword, 10);
+      await db.query(
+        'UPDATE users SET password = ?, role = ? WHERE email = ?',
+        [hashedPassword, 'admin', defaultAdminEmail]
+      );
+      console.log(`Default admin password reset for ${defaultAdminEmail}`);
     }
 
     // Posts table
@@ -286,24 +299,16 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 app.post('/api/auth/register', async (req, res) => {
-  const { email, password, accessCode } = req.body;
+  const { email, password } = req.body;
   const db = getDbPool();
   if (!db) return res.status(500).json({ error: 'Database not connected' });
 
   try {
-    const expectedAccessCode = (process.env.ACCESS_CONTROL_CODE || '').trim();
-    if (!expectedAccessCode) {
-      return res.status(503).json({ error: 'Registration is disabled. Configure ACCESS_CONTROL_CODE on the server.' });
-    }
-
-    if (!email || !password || !accessCode) {
-      return res.status(400).json({ error: 'Email, password, and access code are required' });
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
     }
 
     const normalizedEmail = String(email).trim().toLowerCase();
-    if (String(accessCode).trim() !== expectedAccessCode) {
-      return res.status(403).json({ error: 'Invalid access code' });
-    }
 
     if (String(password).length < 8) {
       return res.status(400).json({ error: 'Password must be at least 8 characters' });

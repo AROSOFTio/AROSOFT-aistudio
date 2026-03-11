@@ -171,7 +171,7 @@ export function AdminLogin() {
           <p className="mt-4 text-sm text-slate-600 text-center">
             Need admin access?{' '}
             <Link to="/register" className="text-blue-600 hover:text-blue-700 font-medium">
-              Register with access code
+              Create an account
             </Link>
           </p>
         </div>
