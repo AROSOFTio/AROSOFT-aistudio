@@ -47,6 +47,31 @@ function getDbPool() {
   return pool;
 }
 
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)+/g, '');
+}
+
+async function generateUniqueSlug(db: mysql.Pool, title: string, excludeId?: string): Promise<string> {
+  const baseSlug = slugify(title) || `post-${Date.now()}`;
+  let candidate = baseSlug;
+  let suffix = 1;
+
+  while (true) {
+    const query = excludeId
+      ? 'SELECT id FROM posts WHERE slug = ? AND id <> ? LIMIT 1'
+      : 'SELECT id FROM posts WHERE slug = ? LIMIT 1';
+    const params = excludeId ? [candidate, excludeId] : [candidate];
+    const [rows]: any = await db.query(query, params);
+
+    if (rows.length === 0) return candidate;
+    candidate = `${baseSlug}-${suffix++}`;
+  }
+}
+
 // Initialize Database Schema
 async function initDb() {
   const db = getDbPool();
@@ -206,20 +231,61 @@ app.get('/api/admin/posts', authenticateToken, async (req: any, res) => {
   }
 });
 
+app.get('/api/admin/posts/:id', authenticateToken, async (req: any, res) => {
+  const db = getDbPool();
+  if (!db) return res.status(500).json({ error: 'Database not connected' });
+
+  try {
+    const [posts]: any = await db.query('SELECT * FROM posts WHERE id = ? LIMIT 1', [req.params.id]);
+    if (posts.length === 0) return res.status(404).json({ error: 'Post not found' });
+    res.json(posts[0]);
+  } catch (error) {
+    console.error('Fetch admin post error:', error);
+    res.status(500).json({ error: 'Failed to fetch post' });
+  }
+});
+
+app.get('/api/admin/stats', authenticateToken, async (req: any, res) => {
+  const db = getDbPool();
+  if (!db) return res.status(500).json({ error: 'Database not connected' });
+
+  try {
+    const [postsRows]: any = await db.query('SELECT COUNT(*) as count FROM posts');
+    const [ordersRows]: any = await db.query('SELECT COUNT(*) as count FROM orders');
+    const [usersRows]: any = await db.query('SELECT COUNT(*) as count FROM users');
+    const [revenueRows]: any = await db.query('SELECT COALESCE(SUM(amount), 0) as total FROM orders');
+
+    res.json({
+      posts: Number(postsRows[0]?.count || 0),
+      orders: Number(ordersRows[0]?.count || 0),
+      users: Number(usersRows[0]?.count || 0),
+      revenue: Number(revenueRows[0]?.total || 0),
+    });
+  } catch (error) {
+    console.error('Fetch admin stats error:', error);
+    res.status(500).json({ error: 'Failed to fetch dashboard stats' });
+  }
+});
+
 app.post('/api/admin/posts', authenticateToken, async (req: any, res) => {
   const { title, content, excerpt, status } = req.body;
   const db = getDbPool();
   if (!db) return res.status(500).json({ error: 'Database not connected' });
 
+  if (!title || !content) {
+    return res.status(400).json({ error: 'Title and content are required' });
+  }
+
   try {
     const id = uuidv4();
-    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
+    const slug = await generateUniqueSlug(db, title);
+    const normalizedStatus = status === 'draft' ? 'draft' : 'published';
     
     await db.query(
       'INSERT INTO posts (id, title, slug, content, excerpt, author_id, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [id, title, slug, content, excerpt, req.user.id, status || 'published']
+      [id, title, slug, content, excerpt, req.user.id, normalizedStatus]
     );
-    res.json({ success: true, id, slug });
+    res.status(201).json({ success: true, id, slug });
   } catch (error) {
     console.error('Create post error:', error);
     res.status(500).json({ error: 'Failed to create post' });
@@ -231,13 +297,19 @@ app.put('/api/admin/posts/:id', authenticateToken, async (req: any, res) => {
   const db = getDbPool();
   if (!db) return res.status(500).json({ error: 'Database not connected' });
 
+  if (!title || !content) {
+    return res.status(400).json({ error: 'Title and content are required' });
+  }
+
   try {
-    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
+    const slug = await generateUniqueSlug(db, title, req.params.id);
+    const normalizedStatus = status === 'draft' ? 'draft' : 'published';
     
-    await db.query(
+    const [result]: any = await db.query(
       'UPDATE posts SET title = ?, slug = ?, content = ?, excerpt = ?, status = ? WHERE id = ?',
-      [title, slug, content, excerpt, status || 'published', req.params.id]
+      [title, slug, content, excerpt, normalizedStatus, req.params.id]
     );
+    if (result.affectedRows === 0) return res.status(404).json({ error: 'Post not found' });
     res.json({ success: true, id: req.params.id, slug });
   } catch (error) {
     console.error('Update post error:', error);
@@ -250,7 +322,8 @@ app.delete('/api/admin/posts/:id', authenticateToken, async (req: any, res) => {
   if (!db) return res.status(500).json({ error: 'Database not connected' });
 
   try {
-    await db.query('DELETE FROM posts WHERE id = ?', [req.params.id]);
+    const [result]: any = await db.query('DELETE FROM posts WHERE id = ?', [req.params.id]);
+    if (result.affectedRows === 0) return res.status(404).json({ error: 'Post not found' });
     res.json({ success: true });
   } catch (error) {
     console.error('Delete post error:', error);

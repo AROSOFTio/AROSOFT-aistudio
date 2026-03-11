@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { Outlet, useNavigate, Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, FileText, LogOut, Settings } from 'lucide-react';
+import { LayoutDashboard, FileText, LogOut } from 'lucide-react';
 
 export function AdminLayout() {
   const navigate = useNavigate();
@@ -21,7 +21,6 @@ export function AdminLayout() {
   const navItems = [
     { name: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
     { name: 'Posts', path: '/admin/posts', icon: FileText },
-    { name: 'Settings', path: '/admin/settings', icon: Settings },
   ];
 
   return (

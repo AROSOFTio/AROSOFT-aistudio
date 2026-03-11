@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Plus, Edit, Trash2, Loader2, ExternalLink, AlertCircle } from 'lucide-react';
 
 interface Post {
@@ -11,6 +11,7 @@ interface Post {
 }
 
 export function AdminPosts() {
+  const navigate = useNavigate();
   const [posts, setPosts] = useState<Post[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -19,13 +20,26 @@ export function AdminPosts() {
 
   const fetchPosts = async () => {
     setIsLoading(true);
+    setError('');
     try {
       const token = localStorage.getItem('adminToken');
+      if (!token) {
+        navigate('/admin/login');
+        return;
+      }
+
       const response = await fetch('/api/admin/posts', {
         headers: {
           Authorization: `Bearer ${token}`,
         },
       });
+
+      if (response.status === 401 || response.status === 403) {
+        localStorage.removeItem('adminToken');
+        navigate('/admin/login');
+        return;
+      }
+
       if (!response.ok) throw new Error('Failed to fetch posts');
       const data = await response.json();
       setPosts(data);
@@ -38,7 +52,7 @@ export function AdminPosts() {
 
   useEffect(() => {
     fetchPosts();
-  }, []);
+  }, [navigate]);
 
   const confirmDelete = (id: string) => {
     setPostToDelete(id);
@@ -50,6 +64,11 @@ export function AdminPosts() {
 
     try {
       const token = localStorage.getItem('adminToken');
+      if (!token) {
+        navigate('/admin/login');
+        return;
+      }
+
       const response = await fetch(`/api/admin/posts/${postToDelete}`, {
         method: 'DELETE',
         headers: {
@@ -57,7 +76,16 @@ export function AdminPosts() {
         },
       });
 
-      if (!response.ok) throw new Error('Failed to delete post');
+      if (response.status === 401 || response.status === 403) {
+        localStorage.removeItem('adminToken');
+        navigate('/admin/login');
+        return;
+      }
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.error || 'Failed to delete post');
+      }
       
       setPosts(posts.filter((p) => p.id !== postToDelete));
       setDeleteModalOpen(false);

@@ -20,25 +20,29 @@ export function AdminPostEditor() {
       const fetchPost = async () => {
         try {
           const token = localStorage.getItem('adminToken');
-          // We can use the public endpoint to fetch the post by slug, but we only have ID here.
-          // Let's fetch all admin posts and find the one with this ID.
-          const response = await fetch('/api/admin/posts', {
+          if (!token) {
+            navigate('/admin/login');
+            return;
+          }
+
+          const response = await fetch(`/api/admin/posts/${id}`, {
             headers: {
               Authorization: `Bearer ${token}`,
             },
           });
-          if (!response.ok) throw new Error('Failed to fetch post');
-          const posts = await response.json();
-          const post = posts.find((p: any) => p.id === id);
-          
-          if (post) {
-            setTitle(post.title);
-            setContent(post.content);
-            setExcerpt(post.excerpt || '');
-            setStatus(post.status);
-          } else {
-            throw new Error('Post not found');
+
+          if (response.status === 401 || response.status === 403) {
+            localStorage.removeItem('adminToken');
+            navigate('/admin/login');
+            return;
           }
+
+          if (!response.ok) throw new Error('Failed to fetch post');
+          const post = await response.json();
+          setTitle(post.title);
+          setContent(post.content);
+          setExcerpt(post.excerpt || '');
+          setStatus(post.status);
         } catch (err: any) {
           setError(err.message);
         } finally {
@@ -48,7 +52,7 @@ export function AdminPostEditor() {
 
       fetchPost();
     }
-  }, [id, isEditing]);
+  }, [id, isEditing, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,6 +61,11 @@ export function AdminPostEditor() {
 
     try {
       const token = localStorage.getItem('adminToken');
+      if (!token) {
+        navigate('/admin/login');
+        return;
+      }
+
       const url = isEditing ? `/api/admin/posts/${id}` : '/api/admin/posts';
       const method = isEditing ? 'PUT' : 'POST';
 
@@ -68,6 +77,12 @@ export function AdminPostEditor() {
         },
         body: JSON.stringify({ title, content, excerpt, status }),
       });
+
+      if (response.status === 401 || response.status === 403) {
+        localStorage.removeItem('adminToken');
+        navigate('/admin/login');
+        return;
+      }
 
       if (!response.ok) {
         const data = await response.json();
