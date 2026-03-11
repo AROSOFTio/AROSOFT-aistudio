@@ -61,6 +61,7 @@ const pesapalBaseUrl =
   (process.env.PESAPAL_ENV || 'sandbox').toLowerCase() === 'live'
     ? 'https://pay.pesapal.com/v3/api'
     : 'https://cybqa.pesapal.com/pesapalv3/api';
+const APP_BUILD = '2026-03-11-pesapal-live-domain-auto';
 
 const domainCheckCache = new Map<string, { expiresAt: number; result: DomainCheckResult }>();
 let pesapalTokenCache: { token: string; expiresAt: number } | null = null;
@@ -432,7 +433,18 @@ const requireAdmin = (req: any, res: any, next: any) => {
 
 // API Routes
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', dbConnected: getDbPool() !== null });
+  res.json({ status: 'ok', dbConnected: getDbPool() !== null, build: APP_BUILD });
+});
+
+app.get('/api/version', (_req, res) => {
+  res.json({
+    build: APP_BUILD,
+    features: {
+      domainAutoCheck: true,
+      pesapalV3: true,
+      legacyPesapalIpnRoute: true,
+    },
+  });
 });
 
 app.get('/api/domain/check', async (req, res) => {
@@ -800,7 +812,7 @@ app.post('/api/orders', orderUpload.single('systemZip'), async (req, res) => {
   }
 });
 
-app.get('/api/pesapal/callback', async (req, res) => {
+app.get(['/api/pesapal/callback', '/api/pesapal_callback.php'], async (req, res) => {
   try {
     const trackingId = String(req.query.OrderTrackingId || req.query.orderTrackingId || '').trim();
     const merchantReference = String(req.query.OrderMerchantReference || req.query.orderMerchantReference || '').trim();
@@ -838,7 +850,7 @@ app.get('/api/pesapal/callback', async (req, res) => {
   }
 });
 
-app.post('/api/pesapal/ipn', async (req, res) => {
+app.post(['/api/pesapal/ipn', '/api/pesapal_ipn.php'], async (req, res) => {
   try {
     const trackingId = String(req.body?.OrderTrackingId || req.body?.order_tracking_id || '').trim();
     const merchantReference = String(
