@@ -110,12 +110,14 @@ async function initDb() {
     // Create default admin if no users exist
     const [users]: any = await db.query('SELECT COUNT(*) as count FROM users');
     if (users[0].count === 0) {
-      const hashedPassword = await bcrypt.hash('admin123', 10);
+      const defaultAdminEmail = process.env.DEFAULT_ADMIN_EMAIL || 'admin@arosoft.io';
+      const defaultAdminPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'admin123';
+      const hashedPassword = await bcrypt.hash(defaultAdminPassword, 10);
       await db.query(
         'INSERT INTO users (id, email, password, role) VALUES (?, ?, ?, ?)',
-        [uuidv4(), 'admin@arosoft.io', hashedPassword, 'admin']
+        [uuidv4(), defaultAdminEmail, hashedPassword, 'admin']
       );
-      console.log('Default admin created: admin@arosoft.io / admin123');
+      console.log(`Default admin created: ${defaultAdminEmail} / ${defaultAdminPassword}`);
     }
 
     // Posts table
@@ -164,7 +166,12 @@ app.post('/api/auth/login', async (req, res) => {
   if (!db) return res.status(500).json({ error: 'Database not connected' });
 
   try {
-    const [users]: any = await db.query('SELECT * FROM users WHERE email = ?', [email]);
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const [users]: any = await db.query('SELECT * FROM users WHERE email = ?', [normalizedEmail]);
     const user = users[0];
 
     if (!user) {
@@ -186,6 +193,50 @@ app.post('/api/auth/login', async (req, res) => {
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+app.post('/api/auth/register', async (req, res) => {
+  const { email, password, accessCode } = req.body;
+  const db = getDbPool();
+  if (!db) return res.status(500).json({ error: 'Database not connected' });
+
+  try {
+    const expectedAccessCode = (process.env.ACCESS_CONTROL_CODE || '').trim();
+    if (!expectedAccessCode) {
+      return res.status(503).json({ error: 'Registration is disabled. Configure ACCESS_CONTROL_CODE on the server.' });
+    }
+
+    if (!email || !password || !accessCode) {
+      return res.status(400).json({ error: 'Email, password, and access code are required' });
+    }
+
+    const normalizedEmail = String(email).trim().toLowerCase();
+    if (String(accessCode).trim() !== expectedAccessCode) {
+      return res.status(403).json({ error: 'Invalid access code' });
+    }
+
+    if (String(password).length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    }
+
+    const [existingUsers]: any = await db.query('SELECT id FROM users WHERE email = ? LIMIT 1', [normalizedEmail]);
+    if (existingUsers.length > 0) {
+      return res.status(409).json({ error: 'Email is already registered' });
+    }
+
+    const userId = uuidv4();
+    const hashedPassword = await bcrypt.hash(String(password), 10);
+
+    await db.query(
+      'INSERT INTO users (id, email, password, role) VALUES (?, ?, ?, ?)',
+      [userId, normalizedEmail, hashedPassword, 'admin']
+    );
+
+    res.status(201).json({ success: true, id: userId, email: normalizedEmail });
+  } catch (error) {
+    console.error('Register error:', error);
+    res.status(500).json({ error: 'Registration failed' });
   }
 });
 

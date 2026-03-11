@@ -27,10 +27,12 @@ export const Navbar = () => {
             </div>
           </div>
           <div className="hidden md:flex items-center gap-4">
-            <button className="text-slate-600 hover:text-slate-900 font-medium text-sm">Sign In</button>
-            <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+            <Link to="/admin/login" className="text-slate-600 hover:text-slate-900 font-medium text-sm">
+              Sign In
+            </Link>
+            <Link to="/student-offer" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
               Get Started
-            </button>
+            </Link>
           </div>
           <div className="-mr-2 flex md:hidden">
             <button 
@@ -53,10 +55,12 @@ export const Navbar = () => {
             <Link to="/blog" className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50">Blog</Link>
           </div>
           <div className="pt-4 pb-3 border-t border-slate-200 px-5 flex flex-col gap-3">
-            <button className="w-full text-center text-slate-600 hover:text-slate-900 font-medium py-2">Sign In</button>
-            <button className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors">
+            <Link to="/admin/login" className="w-full text-center text-slate-600 hover:text-slate-900 font-medium py-2" onClick={() => setIsOpen(false)}>
+              Sign In
+            </Link>
+            <Link to="/student-offer" className="w-full text-center bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors" onClick={() => setIsOpen(false)}>
               Get Started
-            </button>
+            </Link>
           </div>
         </div>
       )}

@@ -5,6 +5,7 @@ import { StudentOffer } from './pages/StudentOffer';
 import { Blog } from './pages/Blog';
 import { BlogPost } from './pages/BlogPost';
 import { AdminLogin } from './pages/admin/Login';
+import { AdminRegister } from './pages/admin/Register';
 import { AdminLayout } from './pages/admin/Layout';
 import { AdminDashboard } from './pages/admin/Dashboard';
 import { AdminPosts } from './pages/admin/Posts';
@@ -21,6 +22,7 @@ export default function App() {
         
         {/* Admin Routes */}
         <Route path="/admin/login" element={<AdminLogin />} />
+        <Route path="/admin/register" element={<AdminRegister />} />
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="dashboard" element={<AdminDashboard />} />

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Lock, Mail, Loader2 } from 'lucide-react';
 
 export function AdminLogin() {
@@ -23,7 +23,7 @@ export function AdminLogin() {
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
         throw new Error(data.error || 'Login failed');
@@ -32,7 +32,7 @@ export function AdminLogin() {
       localStorage.setItem('adminToken', data.token);
       navigate('/admin/dashboard');
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || 'Login failed');
     } finally {
       setIsLoading(false);
     }
@@ -61,10 +61,7 @@ export function AdminLogin() {
             )}
 
             <div>
-              <label
-                htmlFor="email"
-                className="block text-sm font-medium text-slate-700"
-              >
+              <label htmlFor="email" className="block text-sm font-medium text-slate-700">
                 Email address
               </label>
               <div className="mt-1 relative rounded-md shadow-sm">
@@ -86,10 +83,7 @@ export function AdminLogin() {
             </div>
 
             <div>
-              <label
-                htmlFor="password"
-                className="block text-sm font-medium text-slate-700"
-              >
+              <label htmlFor="password" className="block text-sm font-medium text-slate-700">
                 Password
               </label>
               <div className="mt-1 relative rounded-md shadow-sm">
@@ -105,7 +99,7 @@ export function AdminLogin() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 sm:text-sm border-slate-300 rounded-md py-2 border"
-                  placeholder="••••••••"
+                  placeholder="********"
                 />
               </div>
             </div>
@@ -114,16 +108,19 @@ export function AdminLogin() {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
               >
-                {isLoading ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : (
-                  'Sign in'
-                )}
+                {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Sign in'}
               </button>
             </div>
           </form>
+
+          <p className="mt-4 text-sm text-slate-600 text-center">
+            Need admin access?{' '}
+            <Link to="/admin/register" className="text-blue-600 hover:text-blue-700 font-medium">
+              Register with access code
+            </Link>
+          </p>
         </div>
       </div>
     </div>
