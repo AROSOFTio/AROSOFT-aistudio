@@ -24,7 +24,7 @@ export function AdminPosts() {
     try {
       const token = localStorage.getItem('adminToken');
       if (!token) {
-        navigate('/admin/login');
+        navigate('/login');
         return;
       }
 
@@ -36,7 +36,7 @@ export function AdminPosts() {
 
       if (response.status === 401 || response.status === 403) {
         localStorage.removeItem('adminToken');
-        navigate('/admin/login');
+        navigate('/login');
         return;
       }
 
@@ -65,7 +65,7 @@ export function AdminPosts() {
     try {
       const token = localStorage.getItem('adminToken');
       if (!token) {
-        navigate('/admin/login');
+        navigate('/login');
         return;
       }
 
@@ -78,7 +78,7 @@ export function AdminPosts() {
 
       if (response.status === 401 || response.status === 403) {
         localStorage.removeItem('adminToken');
-        navigate('/admin/login');
+        navigate('/login');
         return;
       }
 

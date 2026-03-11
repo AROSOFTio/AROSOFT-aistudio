@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { 
   Server, 
@@ -21,6 +21,46 @@ import { Navbar } from '../components/Navbar';
 import { Footer } from '../components/Footer';
 
 const Hero = () => {
+  const [domainQuery, setDomainQuery] = useState('');
+  const [domainStatus, setDomainStatus] = useState<'idle' | 'loading' | 'available' | 'taken' | 'unknown'>('idle');
+  const [domainResult, setDomainResult] = useState('');
+  const [domainError, setDomainError] = useState('');
+
+  const checkDomain = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setDomainError('');
+    setDomainResult('');
+
+    const input = domainQuery.trim();
+    if (!input) {
+      setDomainStatus('unknown');
+      setDomainError('Enter a domain name to check.');
+      return;
+    }
+
+    setDomainStatus('loading');
+    try {
+      const response = await fetch(`/api/domain/check?domain=${encodeURIComponent(input)}`);
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Domain check failed');
+      }
+
+      setDomainStatus(data.status || 'unknown');
+      setDomainResult(data.domain || input);
+    } catch (error: any) {
+      setDomainStatus('unknown');
+      setDomainError(error.message || 'Unable to check this domain right now.');
+    }
+  };
+
+  const statusStyles: Record<'available' | 'taken' | 'unknown', string> = {
+    available: 'bg-emerald-500/15 text-emerald-300 border-emerald-400/40',
+    taken: 'bg-red-500/15 text-red-300 border-red-400/40',
+    unknown: 'bg-amber-500/15 text-amber-300 border-amber-400/40',
+  };
+
   return (
     <div className="relative overflow-hidden bg-slate-900 pt-16 pb-32">
       <div className="absolute inset-0 bg-[url('https://picsum.photos/seed/server/1920/1080?blur=10')] opacity-20 bg-cover bg-center" />
@@ -46,24 +86,48 @@ const Hero = () => {
           Premium hosting, domain registration, and custom systems development to scale your business globally.
         </motion.p>
 
-        <motion.div 
+        <motion.form
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.2 }}
           className="max-w-3xl mx-auto bg-white p-2 rounded-2xl shadow-xl flex flex-col sm:flex-row gap-2"
+          onSubmit={checkDomain}
         >
           <div className="relative flex-grow flex items-center">
             <Search className="absolute left-4 w-5 h-5 text-slate-400" />
             <input 
               type="text" 
               placeholder="Find your perfect domain name..." 
+              value={domainQuery}
+              onChange={(event) => setDomainQuery(event.target.value)}
               className="w-full pl-12 pr-4 py-4 rounded-xl border-none focus:ring-2 focus:ring-blue-500 text-lg outline-none"
             />
           </div>
-          <button className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-xl font-semibold text-lg transition-colors flex items-center justify-center gap-2 whitespace-nowrap">
-            Search <ChevronRight className="w-5 h-5" />
+          <button
+            type="submit"
+            disabled={domainStatus === 'loading'}
+            className="bg-blue-600 hover:bg-blue-700 disabled:opacity-70 text-white px-8 py-4 rounded-xl font-semibold text-lg transition-colors flex items-center justify-center gap-2 whitespace-nowrap"
+          >
+            {domainStatus === 'loading' ? 'Checking...' : 'Search'} <ChevronRight className="w-5 h-5" />
           </button>
-        </motion.div>
+        </motion.form>
+
+        {(domainResult || domainError) && (
+          <div className="max-w-3xl mx-auto mt-4">
+            {domainError ? (
+              <div className={`rounded-xl border px-4 py-3 text-left text-sm ${statusStyles.unknown}`}>
+                {domainError}
+              </div>
+            ) : (
+              <div className={`rounded-xl border px-4 py-3 text-left text-sm ${statusStyles[domainStatus as 'available' | 'taken' | 'unknown']}`}>
+                <strong className="mr-2">{domainResult}</strong>
+                {domainStatus === 'available' && 'is available for registration.'}
+                {domainStatus === 'taken' && 'is already registered (taken).'}
+                {domainStatus === 'unknown' && 'status is unknown right now. Try again.'}
+              </div>
+            )}
+          </div>
+        )}
 
         <motion.div 
           initial={{ opacity: 0 }}

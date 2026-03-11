@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Navbar } from '../components/Navbar';
 import { Footer } from '../components/Footer';
 import { Calendar, ArrowLeft, Loader2 } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
 import Markdown from 'react-markdown';
+import DOMPurify from 'dompurify';
 
 interface Post {
   id: string;
@@ -21,6 +22,21 @@ export function BlogPost() {
   const [post, setPost] = useState<Post | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+
+  const renderedContent = useMemo(() => {
+    const rawContent = String(post?.content || '');
+    const hasHtml = /<\/?[a-z][\s\S]*>/i.test(rawContent);
+
+    if (!hasHtml) {
+      return { mode: 'markdown' as const, content: rawContent };
+    }
+
+    const cleanHtml = DOMPurify.sanitize(rawContent, {
+      ADD_TAGS: ['iframe'],
+      ADD_ATTR: ['allow', 'allowfullscreen', 'frameborder', 'scrolling', 'target', 'rel'],
+    });
+    return { mode: 'html' as const, content: cleanHtml };
+  }, [post?.content]);
 
   useEffect(() => {
     const fetchPost = async () => {
@@ -93,7 +109,11 @@ export function BlogPost() {
                 </header>
 
                 <div className="prose prose-slate prose-blue max-w-none">
-                  <Markdown>{post.content}</Markdown>
+                  {renderedContent.mode === 'html' ? (
+                    <div dangerouslySetInnerHTML={{ __html: renderedContent.content }} />
+                  ) : (
+                    <Markdown>{renderedContent.content}</Markdown>
+                  )}
                 </div>
               </div>
             </article>

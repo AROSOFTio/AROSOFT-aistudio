@@ -1,22 +1,63 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Outlet, useNavigate, Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, FileText, LogOut } from 'lucide-react';
+import { LayoutDashboard, FileText, LogOut, Loader2 } from 'lucide-react';
 
 export function AdminLayout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('adminToken');
-    if (!token) {
-      navigate('/admin/login');
-    }
+    const verifySession = async () => {
+      const token = localStorage.getItem('adminToken');
+      if (!token) {
+        navigate('/login', { replace: true });
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/auth/me', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          localStorage.removeItem('adminToken');
+          navigate('/login', { replace: true });
+          return;
+        }
+
+        const data = await response.json();
+        if (data?.user?.role !== 'admin') {
+          localStorage.removeItem('adminToken');
+          navigate('/login', { replace: true });
+          return;
+        }
+      } catch {
+        localStorage.removeItem('adminToken');
+        navigate('/login', { replace: true });
+        return;
+      } finally {
+        setIsCheckingSession(false);
+      }
+    };
+
+    verifySession();
   }, [navigate]);
 
   const handleLogout = () => {
     localStorage.removeItem('adminToken');
-    navigate('/admin/login');
+    navigate('/login', { replace: true });
   };
+
+  if (isCheckingSession) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <Loader2 className="h-8 w-8 text-blue-600 animate-spin" />
+      </div>
+    );
+  }
 
   const navItems = [
     { name: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },

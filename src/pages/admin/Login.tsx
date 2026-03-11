@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Lock, Mail, Loader2 } from 'lucide-react';
 
@@ -7,7 +7,46 @@ export function AdminLogin() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const checkSession = async () => {
+      const token = localStorage.getItem('adminToken');
+      if (!token) {
+        setIsCheckingSession(false);
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/auth/me', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          localStorage.removeItem('adminToken');
+          setIsCheckingSession(false);
+          return;
+        }
+
+        const data = await response.json();
+        if (data?.user?.role === 'admin') {
+          navigate('/admin/dashboard', { replace: true });
+          return;
+        }
+
+        localStorage.removeItem('adminToken');
+      } catch {
+        localStorage.removeItem('adminToken');
+      } finally {
+        setIsCheckingSession(false);
+      }
+    };
+
+    checkSession();
+  }, [navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,13 +69,27 @@ export function AdminLogin() {
       }
 
       localStorage.setItem('adminToken', data.token);
-      navigate('/admin/dashboard');
+      if (data?.user?.role === 'admin') {
+        navigate('/admin/dashboard', { replace: true });
+        return;
+      }
+
+      localStorage.removeItem('adminToken');
+      throw new Error('Your account does not have admin access');
     } catch (err: any) {
       setError(err.message || 'Login failed');
     } finally {
       setIsLoading(false);
     }
   };
+
+  if (isCheckingSession) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
@@ -117,7 +170,7 @@ export function AdminLogin() {
 
           <p className="mt-4 text-sm text-slate-600 text-center">
             Need admin access?{' '}
-            <Link to="/admin/register" className="text-blue-600 hover:text-blue-700 font-medium">
+            <Link to="/register" className="text-blue-600 hover:text-blue-700 font-medium">
               Register with access code
             </Link>
           </p>

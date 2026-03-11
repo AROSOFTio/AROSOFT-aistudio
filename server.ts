@@ -9,20 +9,39 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import fs from 'node:fs';
 import path from 'node:path';
+import { promises as dns } from 'node:dns';
 
 dotenv.config();
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
+const UPLOADS_ROOT = path.resolve(process.cwd(), 'uploads');
+const EDITOR_UPLOADS_DIR = path.join(UPLOADS_ROOT, 'editor');
 
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+fs.mkdirSync(EDITOR_UPLOADS_DIR, { recursive: true });
+app.use('/uploads', express.static(UPLOADS_ROOT));
 
-// Multer setup for file uploads
-const upload = multer({
+// Multer setup for student order uploads (zip)
+const orderUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
+});
+
+const editorStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, EDITOR_UPLOADS_DIR),
+  filename: (_req, file, cb) => {
+    const originalName = file.originalname || 'file';
+    const extension = path.extname(originalName).toLowerCase();
+    cb(null, `${Date.now()}-${uuidv4()}${extension}`);
+  },
+});
+
+const editorUpload = multer({
+  storage: editorStorage,
+  limits: { fileSize: 15 * 1024 * 1024 },
 });
 
 // MySQL Connection Pool
@@ -69,6 +88,48 @@ async function generateUniqueSlug(db: mysql.Pool, title: string, excludeId?: str
 
     if (rows.length === 0) return candidate;
     candidate = `${baseSlug}-${suffix++}`;
+  }
+}
+
+function normalizeDomainInput(rawDomain: string): string {
+  let value = (rawDomain || '').trim().toLowerCase();
+  value = value.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+  return value;
+}
+
+function isValidDomain(domain: string): boolean {
+  return /^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(domain);
+}
+
+async function checkDomainAvailability(domain: string): Promise<{ status: 'available' | 'taken' | 'unknown'; source: string }> {
+  // Primary check via RDAP: registered domains should return 200.
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 6000);
+
+  try {
+    const rdapResponse = await fetch(`https://rdap.org/domain/${encodeURIComponent(domain)}`, {
+      signal: controller.signal,
+      headers: { Accept: 'application/json' },
+    });
+    clearTimeout(timeout);
+
+    if (rdapResponse.ok) return { status: 'taken', source: 'rdap' };
+    if (rdapResponse.status === 404) return { status: 'available', source: 'rdap' };
+  } catch {
+    clearTimeout(timeout);
+    // Fall through to DNS check.
+  }
+
+  // Fallback DNS check: if resolvable, likely already taken.
+  try {
+    await dns.resolveAny(domain);
+    return { status: 'taken', source: 'dns' };
+  } catch (error: any) {
+    const code = error?.code || '';
+    if (code === 'ENOTFOUND' || code === 'ENODATA' || code === 'SERVFAIL') {
+      return { status: 'available', source: 'dns' };
+    }
+    return { status: 'unknown', source: 'dns' };
   }
 }
 
@@ -126,7 +187,7 @@ async function initDb() {
         id VARCHAR(36) PRIMARY KEY,
         title VARCHAR(255) NOT NULL,
         slug VARCHAR(255) UNIQUE NOT NULL,
-        content TEXT NOT NULL,
+        content LONGTEXT NOT NULL,
         excerpt TEXT,
         author_id VARCHAR(36),
         status VARCHAR(50) DEFAULT 'published',
@@ -135,6 +196,9 @@ async function initDb() {
         FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE SET NULL
       )
     `);
+
+    // Ensure rich HTML content can be stored even on older schemas.
+    await db.query('ALTER TABLE posts MODIFY content LONGTEXT NOT NULL');
   } catch (error) {
     console.error('Failed to initialize database schema:', error);
   }
@@ -154,9 +218,34 @@ const authenticateToken = (req: any, res: any, next: any) => {
   });
 };
 
+const requireAdmin = (req: any, res: any, next: any) => {
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  next();
+};
+
 // API Routes
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', dbConnected: getDbPool() !== null });
+});
+
+app.get('/api/domain/check', async (req, res) => {
+  try {
+    const requested = normalizeDomainInput(String(req.query.domain || ''));
+    if (!requested) {
+      return res.status(400).json({ error: 'Domain is required' });
+    }
+    if (!isValidDomain(requested)) {
+      return res.status(400).json({ error: 'Invalid domain format' });
+    }
+
+    const result = await checkDomainAvailability(requested);
+    res.json({ domain: requested, ...result });
+  } catch (error) {
+    console.error('Domain check error:', error);
+    res.status(500).json({ error: 'Failed to check domain availability' });
+  }
 });
 
 // Auth Routes
@@ -240,6 +329,24 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
+app.get('/api/auth/me', authenticateToken, async (req: any, res) => {
+  const db = getDbPool();
+  if (!db) return res.status(500).json({ error: 'Database not connected' });
+
+  try {
+    const [users]: any = await db.query(
+      'SELECT id, email, role, created_at FROM users WHERE id = ? LIMIT 1',
+      [req.user.id]
+    );
+    const user = users[0];
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json({ user });
+  } catch (error) {
+    console.error('Fetch auth user error:', error);
+    res.status(500).json({ error: 'Failed to fetch current user' });
+  }
+});
+
 // Blog Routes
 app.get('/api/posts', async (req, res) => {
   const db = getDbPool();
@@ -269,7 +376,7 @@ app.get('/api/posts/:slug', async (req, res) => {
 });
 
 // Admin Blog Routes (Protected)
-app.get('/api/admin/posts', authenticateToken, async (req: any, res) => {
+app.get('/api/admin/posts', authenticateToken, requireAdmin, async (req: any, res) => {
   const db = getDbPool();
   if (!db) return res.status(500).json({ error: 'Database not connected' });
 
@@ -282,7 +389,7 @@ app.get('/api/admin/posts', authenticateToken, async (req: any, res) => {
   }
 });
 
-app.get('/api/admin/posts/:id', authenticateToken, async (req: any, res) => {
+app.get('/api/admin/posts/:id', authenticateToken, requireAdmin, async (req: any, res) => {
   const db = getDbPool();
   if (!db) return res.status(500).json({ error: 'Database not connected' });
 
@@ -296,7 +403,7 @@ app.get('/api/admin/posts/:id', authenticateToken, async (req: any, res) => {
   }
 });
 
-app.get('/api/admin/stats', authenticateToken, async (req: any, res) => {
+app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req: any, res) => {
   const db = getDbPool();
   if (!db) return res.status(500).json({ error: 'Database not connected' });
 
@@ -318,7 +425,7 @@ app.get('/api/admin/stats', authenticateToken, async (req: any, res) => {
   }
 });
 
-app.post('/api/admin/posts', authenticateToken, async (req: any, res) => {
+app.post('/api/admin/posts', authenticateToken, requireAdmin, async (req: any, res) => {
   const { title, content, excerpt, status } = req.body;
   const db = getDbPool();
   if (!db) return res.status(500).json({ error: 'Database not connected' });
@@ -343,7 +450,7 @@ app.post('/api/admin/posts', authenticateToken, async (req: any, res) => {
   }
 });
 
-app.put('/api/admin/posts/:id', authenticateToken, async (req: any, res) => {
+app.put('/api/admin/posts/:id', authenticateToken, requireAdmin, async (req: any, res) => {
   const { title, content, excerpt, status } = req.body;
   const db = getDbPool();
   if (!db) return res.status(500).json({ error: 'Database not connected' });
@@ -368,7 +475,7 @@ app.put('/api/admin/posts/:id', authenticateToken, async (req: any, res) => {
   }
 });
 
-app.delete('/api/admin/posts/:id', authenticateToken, async (req: any, res) => {
+app.delete('/api/admin/posts/:id', authenticateToken, requireAdmin, async (req: any, res) => {
   const db = getDbPool();
   if (!db) return res.status(500).json({ error: 'Database not connected' });
 
@@ -382,8 +489,49 @@ app.delete('/api/admin/posts/:id', authenticateToken, async (req: any, res) => {
   }
 });
 
+app.post('/api/admin/uploads/image', authenticateToken, requireAdmin, editorUpload.single('file'), async (req: any, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Image file is required' });
+    }
+    if (!String(req.file.mimetype || '').startsWith('image/')) {
+      return res.status(400).json({ error: 'Only image uploads are allowed' });
+    }
+    const url = `/uploads/editor/${req.file.filename}`;
+    res.status(201).json({
+      success: true,
+      url,
+      fileName: req.file.originalname,
+      mimeType: req.file.mimetype,
+      size: req.file.size,
+    });
+  } catch (error) {
+    console.error('Image upload error:', error);
+    res.status(500).json({ error: 'Failed to upload image' });
+  }
+});
+
+app.post('/api/admin/uploads/file', authenticateToken, requireAdmin, editorUpload.single('file'), async (req: any, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'File is required' });
+    }
+    const url = `/uploads/editor/${req.file.filename}`;
+    res.status(201).json({
+      success: true,
+      url,
+      fileName: req.file.originalname,
+      mimeType: req.file.mimetype,
+      size: req.file.size,
+    });
+  } catch (error) {
+    console.error('Attachment upload error:', error);
+    res.status(500).json({ error: 'Failed to upload attachment' });
+  }
+});
+
 // Pesapal Mock Implementation
-app.post('/api/orders', upload.single('systemZip'), async (req, res) => {
+app.post('/api/orders', orderUpload.single('systemZip'), async (req, res) => {
   try {
     const { fullName, email, phone, institution, systemName, systemRepo, packageType, extraNotes } = req.body;
     const file = req.file;

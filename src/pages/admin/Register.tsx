@@ -38,7 +38,7 @@ export function AdminRegister() {
       }
 
       setSuccess('Registration successful. You can now sign in.');
-      setTimeout(() => navigate('/admin/login'), 1200);
+      setTimeout(() => navigate('/login'), 1200);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -158,7 +158,7 @@ export function AdminRegister() {
 
           <p className="mt-4 text-sm text-slate-600 text-center">
             Already have an account?{' '}
-            <Link to="/admin/login" className="text-blue-600 hover:text-blue-700 font-medium">
+            <Link to="/login" className="text-blue-600 hover:text-blue-700 font-medium">
               Sign in
             </Link>
           </p>
