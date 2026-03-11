@@ -191,6 +191,19 @@ app.get('/api/posts/:slug', async (req, res) => {
 });
 
 // Admin Blog Routes (Protected)
+app.get('/api/admin/posts', authenticateToken, async (req: any, res) => {
+  const db = getDbPool();
+  if (!db) return res.status(500).json({ error: 'Database not connected' });
+
+  try {
+    const [posts] = await db.query('SELECT * FROM posts ORDER BY created_at DESC');
+    res.json(posts);
+  } catch (error) {
+    console.error('Fetch admin posts error:', error);
+    res.status(500).json({ error: 'Failed to fetch posts' });
+  }
+});
+
 app.post('/api/admin/posts', authenticateToken, async (req: any, res) => {
   const { title, content, excerpt, status } = req.body;
   const db = getDbPool();
@@ -208,6 +221,38 @@ app.post('/api/admin/posts', authenticateToken, async (req: any, res) => {
   } catch (error) {
     console.error('Create post error:', error);
     res.status(500).json({ error: 'Failed to create post' });
+  }
+});
+
+app.put('/api/admin/posts/:id', authenticateToken, async (req: any, res) => {
+  const { title, content, excerpt, status } = req.body;
+  const db = getDbPool();
+  if (!db) return res.status(500).json({ error: 'Database not connected' });
+
+  try {
+    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
+    
+    await db.query(
+      'UPDATE posts SET title = ?, slug = ?, content = ?, excerpt = ?, status = ? WHERE id = ?',
+      [title, slug, content, excerpt, status || 'published', req.params.id]
+    );
+    res.json({ success: true, id: req.params.id, slug });
+  } catch (error) {
+    console.error('Update post error:', error);
+    res.status(500).json({ error: 'Failed to update post' });
+  }
+});
+
+app.delete('/api/admin/posts/:id', authenticateToken, async (req: any, res) => {
+  const db = getDbPool();
+  if (!db) return res.status(500).json({ error: 'Database not connected' });
+
+  try {
+    await db.query('DELETE FROM posts WHERE id = ?', [req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete post error:', error);
+    res.status(500).json({ error: 'Failed to delete post' });
   }
 });
 
@@ -234,7 +279,7 @@ app.post('/api/orders', upload.single('systemZip'), async (req, res) => {
     }
 
     // Generate a mock Pesapal redirect URL
-    const pesapalRedirectUrl = \`https://pay.pesapal.com/iframe/PesapalIframe3/Index?OrderTrackingId=\${orderId}\`;
+    const pesapalRedirectUrl = `https://pay.pesapal.com/iframe/PesapalIframe3/Index?OrderTrackingId=${orderId}`;
 
     res.json({ 
       success: true, 
@@ -263,7 +308,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(\`Server running on http://localhost:\${PORT}\`);
+    console.log(`Server running on http://localhost:${PORT}`);
   });
 }
 

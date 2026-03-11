@@ -22,6 +22,7 @@ export const Navbar = () => {
                 <Link to="/#domains" className="text-slate-600 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">Domains</Link>
                 <Link to="/student-offer" className="text-blue-600 hover:text-blue-700 px-3 py-2 rounded-md text-sm font-semibold transition-colors bg-blue-50">Student Offer</Link>
                 <Link to="/#tools" className="text-slate-600 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">Tools</Link>
+                <Link to="/blog" className="text-slate-600 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">Blog</Link>
               </div>
             </div>
           </div>
@@ -49,6 +50,7 @@ export const Navbar = () => {
             <Link to="/#domains" className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50">Domains</Link>
             <Link to="/student-offer" className="block px-3 py-2 rounded-md text-base font-medium text-blue-700 bg-blue-50 hover:bg-blue-100">Student Offer</Link>
             <Link to="/#tools" className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50">Tools</Link>
+            <Link to="/blog" className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50">Blog</Link>
           </div>
           <div className="pt-4 pb-3 border-t border-slate-200 px-5 flex flex-col gap-3">
             <button className="w-full text-center text-slate-600 hover:text-slate-900 font-medium py-2">Sign In</button>

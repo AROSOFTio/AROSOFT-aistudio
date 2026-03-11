@@ -2,6 +2,13 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Home } from './pages/Home';
 import { StudentOffer } from './pages/StudentOffer';
+import { Blog } from './pages/Blog';
+import { BlogPost } from './pages/BlogPost';
+import { AdminLogin } from './pages/admin/Login';
+import { AdminLayout } from './pages/admin/Layout';
+import { AdminDashboard } from './pages/admin/Dashboard';
+import { AdminPosts } from './pages/admin/Posts';
+import { AdminPostEditor } from './pages/admin/PostEditor';
 
 export default function App() {
   return (
@@ -9,6 +16,17 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/student-offer" element={<StudentOffer />} />
+        <Route path="/blog" element={<Blog />} />
+        <Route path="/blog/:slug" element={<BlogPost />} />
+        
+        {/* Admin Routes */}
+        <Route path="/admin/login" element={<AdminLogin />} />
+        <Route path="/admin" element={<AdminLayout />}>
+          <Route path="dashboard" element={<AdminDashboard />} />
+          <Route path="posts" element={<AdminPosts />} />
+          <Route path="posts/new" element={<AdminPostEditor />} />
+          <Route path="posts/:id/edit" element={<AdminPostEditor />} />
+        </Route>
       </Routes>
     </Router>
   );
