@@ -7,13 +7,11 @@ import dotenv from 'dotenv';
 import { v4 as uuidv4 } from 'uuid';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-import fs from 'node:fs';
-import path from 'node:path';
 
 dotenv.config();
 
 const app = express();
-const PORT = Number(process.env.PORT || 3000);
+const PORT = 3000;
 
 app.use(cors());
 app.use(express.json());
@@ -306,18 +304,7 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distDir = path.resolve(process.cwd(), 'dist');
-    const distIndex = path.join(distDir, 'index.html');
-
-    if (!fs.existsSync(distIndex)) {
-      console.error('Missing dist/index.html. Run "npm run build" before starting production server.');
-    }
-
-    app.use(express.static(distDir));
-    app.get('*', (req, res, next) => {
-      if (req.path.startsWith('/api/')) return next();
-      res.sendFile(distIndex);
-    });
+    app.use(express.static('dist'));
   }
 
   app.listen(PORT, '0.0.0.0', () => {

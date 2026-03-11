@@ -335,6 +335,142 @@ const Features = () => {
   );
 };
 
+const DetailedServices = () => {
+  return (
+    <div id="detailed-services" className="py-24 bg-white overflow-hidden">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="text-center mb-20">
+          <h2 className="text-3xl font-bold text-slate-900 sm:text-4xl">Our Core Services</h2>
+          <p className="mt-4 text-lg text-slate-600 max-w-2xl mx-auto">
+            Comprehensive digital solutions designed to elevate your business.
+          </p>
+        </div>
+
+        <div className="space-y-24">
+          {/* Hosting */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+            <motion.div 
+              initial={{ opacity: 0, x: -20 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              className="order-2 lg:order-1"
+            >
+              <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center mb-6">
+                <Server className="w-6 h-6 text-blue-600" />
+              </div>
+              <h3 className="text-3xl font-bold text-slate-900 mb-4">Premium Cloud Hosting</h3>
+              <p className="text-lg text-slate-600 mb-6 leading-relaxed">
+                Experience lightning-fast load times and unparalleled reliability with our enterprise-grade cloud hosting infrastructure. Designed for businesses that demand the best performance.
+              </p>
+              <ul className="space-y-4">
+                <li className="flex items-start gap-3">
+                  <CheckCircle2 className="w-6 h-6 text-blue-600 shrink-0" />
+                  <span className="text-slate-700">99.9% Uptime Guarantee with SLA</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <CheckCircle2 className="w-6 h-6 text-blue-600 shrink-0" />
+                  <span className="text-slate-700">Automated Daily Backups & Free SSL</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <CheckCircle2 className="w-6 h-6 text-blue-600 shrink-0" />
+                  <span className="text-slate-700">NVMe SSD Storage for Maximum Speed</span>
+                </li>
+              </ul>
+            </motion.div>
+            <motion.div 
+              initial={{ opacity: 0, x: 20 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              className="order-1 lg:order-2 relative"
+            >
+              <img src="https://picsum.photos/seed/hosting/800/600" alt="Cloud Hosting" className="rounded-2xl shadow-xl" referrerPolicy="no-referrer" />
+            </motion.div>
+          </div>
+
+          {/* Domains */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+            <motion.div 
+              initial={{ opacity: 0, x: -20 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              className="relative"
+            >
+              <img src="https://picsum.photos/seed/domain/800/600" alt="Domain Registration" className="rounded-2xl shadow-xl" referrerPolicy="no-referrer" />
+            </motion.div>
+            <motion.div 
+              initial={{ opacity: 0, x: 20 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+            >
+              <div className="w-12 h-12 rounded-xl bg-indigo-50 flex items-center justify-center mb-6">
+                <Globe className="w-6 h-6 text-indigo-600" />
+              </div>
+              <h3 className="text-3xl font-bold text-slate-900 mb-4">Domain Registration</h3>
+              <p className="text-lg text-slate-600 mb-6 leading-relaxed">
+                Your online identity starts here. Search, register, and manage your domain names with our intuitive control panel. We offer competitive pricing on all major TLDs.
+              </p>
+              <ul className="space-y-4">
+                <li className="flex items-start gap-3">
+                  <CheckCircle2 className="w-6 h-6 text-indigo-600 shrink-0" />
+                  <span className="text-slate-700">Free Domain Privacy Protection</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <CheckCircle2 className="w-6 h-6 text-indigo-600 shrink-0" />
+                  <span className="text-slate-700">Easy DNS Management</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <CheckCircle2 className="w-6 h-6 text-indigo-600 shrink-0" />
+                  <span className="text-slate-700">Auto-renewal to Prevent Expiration</span>
+                </li>
+              </ul>
+            </motion.div>
+          </div>
+
+          {/* Systems Development */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+            <motion.div 
+              initial={{ opacity: 0, x: -20 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              className="order-2 lg:order-1"
+            >
+              <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center mb-6">
+                <Code2 className="w-6 h-6 text-emerald-600" />
+              </div>
+              <h3 className="text-3xl font-bold text-slate-900 mb-4">Custom Systems Development</h3>
+              <p className="text-lg text-slate-600 mb-6 leading-relaxed">
+                Transform your business operations with bespoke software solutions. Our expert team builds scalable, secure, and intuitive applications tailored to your unique requirements.
+              </p>
+              <ul className="space-y-4">
+                <li className="flex items-start gap-3">
+                  <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0" />
+                  <span className="text-slate-700">Enterprise Web Applications</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0" />
+                  <span className="text-slate-700">API Integration & Development</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0" />
+                  <span className="text-slate-700">Legacy System Modernization</span>
+                </li>
+              </ul>
+            </motion.div>
+            <motion.div 
+              initial={{ opacity: 0, x: 20 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              className="order-1 lg:order-2 relative"
+            >
+              <img src="https://picsum.photos/seed/code/800/600" alt="Systems Development" className="rounded-2xl shadow-xl" referrerPolicy="no-referrer" />
+            </motion.div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const Home = () => {
   return (
     <div className="min-h-screen bg-slate-50 font-sans selection:bg-blue-200 selection:text-blue-900">
@@ -342,6 +478,7 @@ export const Home = () => {
       <main>
         <Hero />
         <Services />
+        <DetailedServices />
         <Pricing />
         <Tools />
         <Features />
